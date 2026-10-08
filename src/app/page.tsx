@@ -17,15 +17,21 @@ import {
   Layers,
   X,
   Building2,
+  Settings,
+  Trash2,
 } from 'lucide-react';
 import { ClassFlowService } from '@/lib/supabase/service';
-import { ClassItem, TeacherProfile, Student } from '@/types/database';
-import { MOCK_TEACHER } from '@/lib/supabase/mock-data';
+import { ClassItem, TeacherProfile, Student, SchoolProfile } from '@/types/database';
+import { MOCK_TEACHER, DEFAULT_SCHOOL_PROFILE, SAMPLE_DEMO_CLASSES } from '@/lib/supabase/mock-data';
 import { ClassRosterManagerModal } from '@/components/daily-grid/ClassRosterManagerModal';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
+import { SchoolSettingsModal } from '@/components/common/SchoolSettingsModal';
 
 export default function HomePage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [teacher, setTeacher] = useState<TeacherProfile>(MOCK_TEACHER);
+  const [schoolProfile, setSchoolProfile] = useState<SchoolProfile>(DEFAULT_SCHOOL_PROFILE);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAddClassOpen, setIsAddClassOpen] = useState(false);
   const [isAddStudentsOpen, setIsAddStudentsOpen] = useState(false);
   const [selectedClassForStudents, setSelectedClassForStudents] = useState<string>('');
@@ -51,8 +57,12 @@ export default function HomePage() {
 
   useEffect(() => {
     async function load() {
-      const cls = await ClassFlowService.getAllClasses();
+      const [cls, profile] = await Promise.all([
+        ClassFlowService.getAllClasses(),
+        ClassFlowService.getSchoolProfile(),
+      ]);
       setClasses(cls);
+      setSchoolProfile(profile);
       if (cls.length > 0) {
         setSelectedClassForStudents(cls[0].id);
       }
@@ -94,6 +104,23 @@ export default function HomePage() {
     const refreshedClasses = await ClassFlowService.getAllClasses();
     setClasses(refreshedClasses);
     showToast('Removed student from class roster.');
+  };
+
+  const handleDeleteClass = async (classId: string, className: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${className}"? This will remove all associated submissions.`)) {
+      return;
+    }
+    const updated = await ClassFlowService.deleteClass(classId);
+    setClasses(updated);
+    showToast(`Deleted "${className}" successfully.`);
+  };
+
+  const handleLoadDemoClasses = async () => {
+    // Populate demo classes
+    localStorage.setItem('classflow_classes_list', JSON.stringify(SAMPLE_DEMO_CLASSES));
+    const refreshed = await ClassFlowService.getAllClasses();
+    setClasses(refreshed);
+    showToast('Loaded demo class (Class 4-A) with sample students!');
   };
 
   const handleCreateClass = async (e: React.FormEvent) => {
@@ -188,11 +215,9 @@ export default function HomePage() {
 
       {/* Top Header */}
       <header className="bg-white border-b border-slate-200/80 safe-top sticky top-0 z-20">
-        <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-xs font-black text-lg">
-              CF
-            </div>
+            <SchoolLogoBadge profile={schoolProfile} size="sm" />
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-extrabold text-base text-slate-900 tracking-tight">
@@ -202,18 +227,30 @@ export default function HomePage() {
                   Teacher Edition
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium">
-                {teacher.school_name || 'Personal Teacher Assistant'}
+              <p className="text-[11px] text-slate-500 font-medium truncate max-w-[200px] sm:max-w-xs">
+                {schoolProfile.school_name}
               </p>
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-xs font-bold text-slate-800 flex items-center gap-1 justify-end">
-              <Clock className="w-3 h-3 text-emerald-600" />
-              <span>Dismissal Wrap-up</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors flex items-center gap-1 text-xs font-bold cursor-pointer"
+              title="Configure School Name, CBSE Affiliation & Custom Crest"
+            >
+              <Settings className="w-4 h-4 text-slate-500" />
+              <span className="hidden sm:inline">School Settings</span>
+            </button>
+
+            <div className="text-right hidden sm:block border-l border-slate-200 pl-2.5">
+              <div className="text-xs font-bold text-slate-800 flex items-center gap-1 justify-end">
+                <Clock className="w-3 h-3 text-emerald-600" />
+                <span>Dismissal Wrap-up</span>
+              </div>
+              <div className="text-[11px] text-slate-400">Post-Class Duty</div>
             </div>
-            <div className="text-[11px] text-slate-400">Post-Class Duty</div>
           </div>
         </div>
       </header>
@@ -230,14 +267,14 @@ export default function HomePage() {
               {teacher.full_name}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Managing {classes.length} classes across school terms
+              Managing {classes.length} {classes.length === 1 ? 'class' : 'classes'} • {schoolProfile.campus_locality}, {schoolProfile.city}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsAddClassOpen(true)}
-              className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-slate-800 transition-colors"
+              className="px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>New Class</span>
@@ -324,22 +361,34 @@ export default function HomePage() {
 
           <div className="space-y-3">
             {classes.length === 0 ? (
-              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3 shadow-xs">
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-4 shadow-xs">
                 <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto text-xl font-bold">
                   <BookOpen className="w-6 h-6 text-emerald-600" />
                 </div>
-                <h4 className="font-extrabold text-base text-slate-900">No Classes Added Yet</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Create your first subject or class section to start 60-second daily homework logging.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsAddClassOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Create First Class</span>
-                </button>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900">No Classes Added Yet</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                    Create your first subject or class section to start rapid 60-second homework tracking.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddClassOpen(true)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create First Class</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoadDemoClasses}
+                    className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Load Sample Demo Class</span>
+                  </button>
+                </div>
               </div>
             ) : (
               classes.map((cls) => (
@@ -370,7 +419,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       onClick={() => handleOpenRoster(cls)}
-                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      className="flex-1 sm:flex-none px-3 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       title={`Manage students enrolled in ${cls.name}`}
                     >
                       <Users className="w-3.5 h-3.5 text-indigo-600" />
@@ -379,7 +428,7 @@ export default function HomePage() {
 
                     <Link
                       href={`/classes/${cls.id}/reports`}
-                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      className="flex-1 sm:flex-none px-3 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <FileText className="w-3.5 h-3.5 text-slate-500" />
                       <span>Reports</span>
@@ -387,11 +436,20 @@ export default function HomePage() {
 
                     <Link
                       href={`/classes/${cls.id}/daily`}
-                      className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-colors"
+                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      <span>60s Daily Log</span>
+                      <span>60s Daily</span>
                     </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClass(cls.id, cls.name)}
+                      className="p-2.5 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      title={`Delete ${cls.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               ))
@@ -627,6 +685,17 @@ export default function HomePage() {
           onRemoveStudent={handleRosterRemoveStudent}
         />
       )}
+
+      {/* 2026 INSTITUTIONAL SCHOOL PROFILE & INSIGNIA MODAL */}
+      <SchoolSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={(updated) => {
+          setSchoolProfile(updated);
+          showToast(`Updated school settings for ${updated.school_name}!`);
+        }}
+        initialProfile={schoolProfile}
+      />
     </div>
   );
 }

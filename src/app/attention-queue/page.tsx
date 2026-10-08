@@ -16,11 +16,14 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ClassFlowService } from '@/lib/supabase/service';
-import { AttentionQueueItem, ClassItem } from '@/types/database';
+import { AttentionQueueItem, ClassItem, SchoolProfile } from '@/types/database';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
+import { DEFAULT_SCHOOL_PROFILE } from '@/lib/supabase/mock-data';
 
 export default function AttentionQueuePage() {
   const [items, setItems] = useState<AttentionQueueItem[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [schoolProfile, setSchoolProfile] = useState<SchoolProfile>(DEFAULT_SCHOOL_PROFILE);
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'red' | 'amber'>('all');
   const [loading, setLoading] = useState(true);
@@ -31,12 +34,14 @@ export default function AttentionQueuePage() {
     async function load() {
       try {
         setLoading(true);
-        const [qItems, cls] = await Promise.all([
+        const [qItems, cls, profile] = await Promise.all([
           ClassFlowService.getAttentionQueue(),
           ClassFlowService.getAllClasses(),
+          ClassFlowService.getSchoolProfile(),
         ]);
         setItems(qItems);
         setClasses(cls);
+        setSchoolProfile(profile);
       } catch (err) {
         console.error('Failed to load attention queue', err);
       } finally {
@@ -95,6 +100,7 @@ export default function AttentionQueuePage() {
             >
               <ArrowLeft className="w-4 h-4" />
             </Link>
+            <SchoolLogoBadge profile={schoolProfile} size="sm" />
             <div>
               <h1 className="font-extrabold text-base text-slate-900 tracking-tight flex items-center gap-2">
                 <span>Attention Queue</span>
@@ -102,8 +108,8 @@ export default function AttentionQueuePage() {
                   {filteredItems.length} Pending
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-500">
-                End-of-day interventions & parent communication triage
+              <p className="text-[11px] text-slate-500 truncate max-w-[200px] sm:max-w-xs">
+                {schoolProfile.school_name} • Parent Triage
               </p>
             </div>
           </div>

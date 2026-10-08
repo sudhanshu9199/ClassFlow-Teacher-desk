@@ -11,12 +11,22 @@ import {
   AttentionQueueItem,
   StudentPtmReport,
   ClassConsolidatedRow,
+  SchoolProfile,
+  HandwritingProfile,
+  ObservationCategory,
+  ObservationSeverity,
 } from '@/types/database';
-import { getInitialDailyClassData, MOCK_CLASSES, MOCK_TEACHER } from './mock-data';
+import {
+  getInitialDailyClassData,
+  MOCK_CLASSES,
+  SAMPLE_DEMO_CLASSES,
+  MOCK_TEACHER,
+  DEFAULT_SCHOOL_PROFILE,
+} from './mock-data';
 
 const STORAGE_KEY_PREFIX = 'classflow_daily_';
 const CLASSES_STORAGE_KEY = 'classflow_classes_list';
-const ATTENTION_STORAGE_KEY = 'classflow_attention_queue';
+const SCHOOL_PROFILE_STORAGE_KEY = 'classflow_school_profile';
 
 // Client-side cache/state manager for mock / local mode
 const getLocalData = (classId: string): DailyClassData => {
@@ -54,6 +64,37 @@ export const ClassFlowService = {
     return isSupabaseConfigured();
   },
 
+  // 1. School Profile & Insignia Settings
+  getSchoolProfile(): SchoolProfile {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(SCHOOL_PROFILE_STORAGE_KEY);
+        if (stored) {
+          return JSON.parse(stored);
+        }
+      } catch (err) {
+        console.error('Failed reading school profile', err);
+      }
+    }
+    return DEFAULT_SCHOOL_PROFILE;
+  },
+
+  saveSchoolProfile(profile: SchoolProfile): SchoolProfile {
+    const updated: SchoolProfile = {
+      ...profile,
+      updatedAt: new Date().toISOString(),
+    };
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(SCHOOL_PROFILE_STORAGE_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed saving school profile', err);
+      }
+    }
+    return updated;
+  },
+
+  // 2. Class Roster & Class Management
   async getAllClasses(): Promise<ClassItem[]> {
     if (typeof window !== 'undefined') {
       try {
@@ -63,7 +104,7 @@ export const ClassFlowService = {
         }
       } catch {}
     }
-    return MOCK_CLASSES;
+    return MOCK_CLASSES; // Returns empty array [] by default now (clean slate!)
   },
 
   async createClass(newClass: Omit<ClassItem, 'id' | 'created_at'>): Promise<ClassItem> {
@@ -86,6 +127,31 @@ export const ClassFlowService = {
     return created;
   },
 
+  async deleteClass(classId: string): Promise<ClassItem[]> {
+    const existing = await this.getAllClasses();
+    const updated = existing.filter((c) => c.id !== classId);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify(updated));
+        localStorage.removeItem(`${STORAGE_KEY_PREFIX}${classId}`);
+      } catch (err) {
+        console.error('Failed to delete class', err);
+      }
+    }
+    return updated;
+  },
+
+  async loadSampleDemoClasses(): Promise<ClassItem[]> {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify(SAMPLE_DEMO_CLASSES));
+      } catch (err) {
+        console.error('Failed to load demo classes', err);
+      }
+    }
+    return SAMPLE_DEMO_CLASSES;
+  },
+
   async getNextRollNumber(classId: string): Promise<number> {
     const currentData = await this.getDailyClassData(classId);
     if (!currentData || currentData.students.length === 0) return 1;
@@ -103,6 +169,7 @@ export const ClassFlowService = {
       fatherName?: string;
       motherName?: string;
       admissionNumber?: string;
+      handwriting?: HandwritingProfile;
     }[]
   ): Promise<DailyClassData> {
     const currentData = await this.getDailyClassData(classId);
@@ -116,9 +183,11 @@ export const ClassFlowService = {
         father_name: s.fatherName || '',
         mother_name: s.motherName || '',
         primary_contact: s.phone,
+        handwriting: s.handwriting,
       },
-      submissionStatus: 'pending',
+      submissionStatus: 'pending', // Clean slate: always starts pending!
       recentMissingCount: 0,
+      handwriting: s.handwriting,
     }));
 
     const updatedData: DailyClassData = {
@@ -159,6 +228,7 @@ export const ClassFlowService = {
       fatherName?: string;
       motherName?: string;
       admissionNumber?: string;
+      handwriting?: HandwritingProfile;
     }
   ): Promise<DailyClassData> {
     const currentData = await this.getDailyClassData(classId);
@@ -166,6 +236,7 @@ export const ClassFlowService = {
       if (item.student.id === studentId) {
         return {
           ...item,
+          handwriting: updated.handwriting ?? item.handwriting,
           student: {
             ...item.student,
             roll_number: updated.rollNumber,
@@ -175,6 +246,7 @@ export const ClassFlowService = {
             father_name: updated.fatherName ?? item.student.father_name,
             mother_name: updated.motherName ?? item.student.mother_name,
             admission_number: updated.admissionNumber ?? item.student.admission_number,
+            handwriting: updated.handwriting ?? item.student.handwriting,
           },
         };
       }
@@ -217,6 +289,44 @@ export const ClassFlowService = {
     return updatedData;
   },
 
+  // 3. Handwriting Assessment Tracker
+  async saveHandwritingProfile(
+    classId: string,
+    studentId: string,
+    handwriting: Partial<HandwritingProfile>
+  ): Promise<DailyClassData> {
+    const currentData = await this.getDailyClassData(classId);
+    const updatedStudents = currentData.students.map((item) => {
+      if (item.student.id === studentId) {
+        const existingHw = item.handwriting || item.student.handwriting;
+        const mergedHw: HandwritingProfile = {
+          quality: 'good',
+          alignment: 'proper_baseline',
+          neatness: 'very_tidy',
+          formation: 'clear_letter_sizing',
+          format: 'follows_date_margin',
+          trend: 'improving',
+          ...existingHw,
+          ...handwriting,
+        };
+        return {
+          ...item,
+          handwriting: mergedHw,
+          student: {
+            ...item.student,
+            handwriting: mergedHw,
+          },
+        };
+      }
+      return item;
+    });
+
+    const updatedData: DailyClassData = { ...currentData, students: updatedStudents };
+    saveLocalData(classId, updatedData);
+    return updatedData;
+  },
+
+  // 4. Daily Class Grid Fetch & Sync
   async getDailyClassData(classId: string): Promise<DailyClassData> {
     const supabase = createClient();
 
@@ -235,14 +345,12 @@ export const ClassFlowService = {
         return getLocalData(classId);
       }
 
-      // 2. Fetch Teacher
       const { data: teacherData } = await supabase
         .from('staff')
         .select('*')
         .eq('id', classData.class_teacher_id)
         .single();
 
-      // 3. Fetch latest assignment
       const { data: assignmentData } = await supabase
         .from('assignments')
         .select('*')
@@ -251,7 +359,6 @@ export const ClassFlowService = {
         .limit(1)
         .single();
 
-      // 4. Fetch enrolled students
       const { data: enrollments } = await supabase
         .from('enrollments')
         .select('students (*)')
@@ -278,21 +385,27 @@ export const ClassFlowService = {
         .from('observations')
         .select('*')
         .eq('class_id', classId)
-        .neq('status', 'resolved');
+        .order('created_at', { ascending: true });
 
-      const obsMap: Record<string, Observation> = {};
+      const obsMap: Record<string, Observation[]> = {};
       (activeObs || []).forEach((o: any) => {
-        obsMap[o.student_id] = o;
+        if (!obsMap[o.student_id]) obsMap[o.student_id] = [];
+        obsMap[o.student_id].push(o);
       });
 
       const students: DailyGridStudentItem[] = enrolledStudents.map((st: Student) => {
         const subInfo = submissionsMap[st.id];
+        const studentObsList = obsMap[st.id] || [];
+        const latestObs = studentObsList[studentObsList.length - 1];
+
         return {
           student: st,
           submissionStatus: subInfo?.status || 'pending',
           submissionId: subInfo?.id,
-          existingObservation: obsMap[st.id],
+          existingObservation: latestObs,
+          allObservations: studentObsList,
           recentMissingCount: subInfo?.status === 'missing' ? 1 : 0,
+          handwriting: st.handwriting,
         };
       });
 
@@ -301,7 +414,7 @@ export const ClassFlowService = {
         assignment: assignmentData || {
           id: 'temp-asg',
           class_id: classId,
-          title: 'Daily Homework',
+          title: 'Daily Homework & Notebook Check',
           type: 'homework',
           due_date: new Date().toISOString().split('T')[0],
           created_at: new Date().toISOString(),
@@ -407,19 +520,32 @@ export const ClassFlowService = {
     return { success: true, updatedCount: count };
   },
 
+  // 5. Multi-Date Historical Observation Logger with Structured Points
   async saveObservation(
     classId: string,
     payload: {
       studentId: string;
-      category: Observation['category'];
-      severity: Observation['severity'];
+      category: ObservationCategory;
+      severity: ObservationSeverity;
       actionType: TeacherActionType;
       teacherNote: string;
       status?: InterventionStatus;
+      date?: string;
+      structuredPoints?: string[];
+      actionForHome?: string;
+      handwritingTag?: string;
     }
   ): Promise<{ success: boolean; observation: Observation }> {
+    const formattedDate =
+      payload.date ||
+      new Date().toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+
     const newObs: Observation = {
-      id: `obs-${Date.now().toString(36)}`,
+      id: `obs-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
       student_id: payload.studentId,
       class_id: classId,
       teacher_id: MOCK_TEACHER.id,
@@ -428,21 +554,48 @@ export const ClassFlowService = {
       action_type: payload.actionType,
       teacher_note: payload.teacherNote,
       status: payload.status || 'todo',
+      date: formattedDate,
       created_at: new Date().toISOString(),
+      structured_points: payload.structuredPoints || [payload.teacherNote],
+      action_for_home: payload.actionForHome,
+      handwriting_tag: payload.handwritingTag,
     };
 
     const current = getLocalData(classId);
     const updatedStudents = current.students.map((item) => {
       if (item.student.id === payload.studentId) {
+        const previousObservations = item.allObservations || (item.existingObservation ? [item.existingObservation] : []);
         return {
           ...item,
           existingObservation: newObs,
+          allObservations: [...previousObservations, newObs],
         };
       }
       return item;
     });
 
     saveLocalData(classId, { ...current, students: updatedStudents });
+
+    const supabase = createClient();
+    if (supabase) {
+      try {
+        await supabase.from('observations').insert({
+          id: newObs.id,
+          student_id: newObs.student_id,
+          class_id: newObs.class_id,
+          teacher_id: newObs.teacher_id,
+          category: newObs.category,
+          severity: newObs.severity,
+          teacher_note: newObs.teacher_note,
+          action_type: newObs.action_type,
+          status: newObs.status,
+          created_at: newObs.created_at,
+        });
+      } catch (err) {
+        console.error('Supabase observation insert error', err);
+      }
+    }
+
     return { success: true, observation: newObs };
   },
 
@@ -466,6 +619,7 @@ export const ClassFlowService = {
     return true;
   },
 
+  // 6. Attention Queue
   async getAttentionQueue(): Promise<AttentionQueueItem[]> {
     const classes = await this.getAllClasses();
     const items: AttentionQueueItem[] = [];
@@ -484,6 +638,8 @@ export const ClassFlowService = {
             urgencyLevel: isRed ? 'HIGH_PRIORITY_RED' : 'MEDIUM_PRIORITY_AMBER',
             recentMissingCount: st.recentMissingCount,
             activeObservation: obs,
+            allObservations: st.allObservations,
+            handwriting: st.handwriting,
             suggestedAction: obs?.action_type || (isRed ? 'Call Parent' : 'Assign Remedial Work'),
           });
         }
@@ -493,6 +649,7 @@ export const ClassFlowService = {
     return items.sort((a, b) => (a.urgencyLevel === 'HIGH_PRIORITY_RED' ? -1 : 1));
   },
 
+  // 7. Student PTM Report with Multi-Date Remarks & Handwriting Summary
   async getStudentPtmReport(
     studentId: string,
     classId?: string,
@@ -520,42 +677,61 @@ export const ClassFlowService = {
     }
 
     if (!targetClassData || !studentItem) {
-      targetClassData = await this.getDailyClassData('class-4a-math');
+      targetClassData = getInitialDailyClassData('class-fallback');
       studentItem = targetClassData.students[0];
     }
+
+    const schoolProfile = this.getSchoolProfile();
+
+    // Collect all historical observations for this student across dates
+    const allObs = studentItem.allObservations || (studentItem.existingObservation ? [studentItem.existingObservation] : []);
+    allObs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return {
       student: studentItem.student,
       classInfo: targetClassData.classInfo,
+      schoolProfile,
       timeframe,
       startDate: new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
       stats: {
         totalAssignments: 5,
-        submitted: 4,
+        submitted: studentItem.submissionStatus === 'submitted' ? 5 : 4,
         missing: studentItem.submissionStatus === 'missing' ? 1 : 0,
         incomplete: studentItem.submissionStatus === 'incomplete' ? 1 : 0,
-        completionPct: 80,
+        completionPct: studentItem.submissionStatus === 'submitted' ? 100 : 80,
       },
       assessments: [
         {
-          title: 'Periodic Test 1: Mental Math & Operations',
+          title: 'Periodic Test 1: Mental Math & Number Operations',
           date: '2026-10-02',
           maxMarks: 25,
-          marksObtained: 18.5,
-          percentage: 74,
+          marksObtained: studentItem.student.roll_number === 2 ? 11.5 : studentItem.student.roll_number === 4 ? 9 : 22,
+          percentage: studentItem.student.roll_number === 2 ? 46 : studentItem.student.roll_number === 4 ? 36 : 88,
         },
       ],
-      observations: studentItem.existingObservation ? [studentItem.existingObservation] : [],
+      observations: allObs,
+      handwritingSummary: studentItem.handwriting || studentItem.student.handwriting,
     };
   },
 
+  // 8. Class Consolidated Ledger
   async getClassConsolidatedReport(classId: string): Promise<ClassConsolidatedRow[]> {
     const classData = await this.getDailyClassData(classId);
 
     return classData.students.map((s) => {
       const isRed = s.existingObservation?.severity === 'red' || s.recentMissingCount >= 2;
       const isAmber = s.existingObservation?.severity === 'amber' || s.recentMissingCount === 1;
+
+      const handwritingQuality = s.handwriting?.quality || s.student.handwriting?.quality;
+      const handwritingGrade =
+        handwritingQuality === 'neat_and_clear'
+          ? 'Neat & Clear ✨'
+          : handwritingQuality === 'good'
+          ? 'Good Formation ✍️'
+          : handwritingQuality === 'needs_improvement'
+          ? 'Needs Practice ⚠️'
+          : 'Average 📝';
 
       return {
         rollNumber: s.student.roll_number,
@@ -565,9 +741,10 @@ export const ClassFlowService = {
         totalHw: 5,
         hwSubmitted: s.submissionStatus === 'submitted' ? 5 : 4,
         hwCompletionPct: s.submissionStatus === 'submitted' ? 100 : 80,
-        avgTestPct: 76,
+        avgTestPct: s.student.roll_number === 2 ? 46 : s.student.roll_number === 4 ? 36 : 82,
         redFlags: isRed ? 1 : 0,
         amberFlags: isAmber ? 1 : 0,
+        handwritingGrade,
         interventionStatus: isRed ? 'High Attention' : isAmber ? 'Monitor' : 'On Track',
       };
     });

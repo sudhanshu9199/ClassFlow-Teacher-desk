@@ -18,9 +18,12 @@ import {
   Clock,
   Sparkles,
   Download,
+  PenTool,
 } from 'lucide-react';
 import { ClassFlowService } from '@/lib/supabase/service';
 import { StudentPtmReport } from '@/types/database';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
+import { DEFAULT_SCHOOL_PROFILE } from '@/lib/supabase/mock-data';
 
 export default function StudentPtmDossierPage({
   params,
@@ -82,6 +85,7 @@ export default function StudentPtmDossierPage({
   }
 
   const { student, classInfo, stats, assessments, observations } = report;
+  const schoolProfile = report.schoolProfile || DEFAULT_SCHOOL_PROFILE;
 
   return (
     <div className="min-h-screen bg-slate-100/80 pb-20 print:p-0 print:bg-white print:m-0">
@@ -145,21 +149,22 @@ export default function StudentPtmDossierPage({
       {/* Main 1-Page Printable Dossier Container */}
       <main className="max-w-3xl mx-auto px-4 pt-6 print:p-0 print:m-0 print:max-w-none">
         <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-200/90 print:border-none print:shadow-none print:p-6 print:rounded-none">
-          {/* Institutional Letterhead */}
+          {/* Institutional Letterhead with Dynamic Insignia */}
           <div className="border-b-2 border-slate-900 pb-4 mb-5 flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-800 text-white flex items-center justify-center font-black text-xl shadow-xs print:border print:border-slate-800">
-                DP
-              </div>
+            <div className="flex items-start gap-3.5">
+              <SchoolLogoBadge profile={schoolProfile} size="lg" />
               <div>
-                <h1 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight leading-tight">
-                  DELHI PUBLIC MODEL SCHOOL
+                <h1 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight leading-tight uppercase">
+                  {schoolProfile.school_name}
                 </h1>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">
-                  Primary Wing (Classes 1 to 6) • CBSE Affiliation No: 2130842
+                  Primary Wing (Classes 1 to 6) •{' '}
+                  {schoolProfile.affiliation_known
+                    ? `${schoolProfile.board_affiliation || 'CBSE'} Affiliation No: ${schoolProfile.affiliation_number}`
+                    : 'Affiliation: Primary Education Directorate'}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  Institutional Area, Model Town, New Delhi • Official Student PTM Dossier
+                  {schoolProfile.institutional_area}, {schoolProfile.campus_locality}, {schoolProfile.city} • Official Student PTM Dossier
                 </p>
               </div>
             </div>
@@ -275,39 +280,133 @@ export default function StudentPtmDossierPage({
             </div>
           </div>
 
-          {/* Observations & Teacher Interventions */}
+          {/* 2026 Handwriting & Notebook Presentation Assessment */}
+          <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/60 mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5 font-extrabold text-xs uppercase tracking-wider text-slate-800">
+                <PenTool className="w-4 h-4 text-indigo-600" />
+                <span>Handwriting & Notebook Presentation Assessment</span>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-100 text-indigo-900 border border-indigo-200 capitalize">
+                {report.handwriting?.overall_grade === 'needs_practice'
+                  ? '✍️ Practice Required'
+                  : report.handwriting?.overall_grade === 'improving'
+                  ? '📈 Improvement Trend'
+                  : report.handwriting?.overall_grade === 'neat'
+                  ? '✨ Neat & Clear'
+                  : report.handwriting?.overall_grade === 'excellent'
+                  ? '⭐ Exemplary Penmanship'
+                  : 'Developing Discipline'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs mb-2">
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">4-Line Baseline Alignment</span>
+                <span className="font-extrabold text-slate-800 capitalize">
+                  {report.handwriting?.alignment_grade === 'needs_practice' ? '⚠️ Needs 4-Line Guide' : '✓ Good Line Discipline'}
+                </span>
+              </div>
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Letter Formation & Cursive</span>
+                <span className="font-extrabold text-slate-800 capitalize">
+                  {report.handwriting?.letter_formation_grade || 'Clear & Legible'}
+                </span>
+              </div>
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Neatness & Erasures</span>
+                <span className="font-extrabold text-slate-800 capitalize">
+                  {report.handwriting?.neatness_grade === 'needs_practice' ? '⚠️ Frequent Rubbing' : '✓ Clean & Neat Pages'}
+                </span>
+              </div>
+              <div className="p-2.5 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] font-bold text-slate-400 uppercase block">Margin & Date Format</span>
+                <span className="font-extrabold text-slate-800 capitalize">
+                  {report.handwriting?.formatting_grade || '✓ Regular Margin & Index'}
+                </span>
+              </div>
+            </div>
+
+            {report.handwriting?.notes && (
+              <p className="text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200 mt-2 font-medium">
+                <span className="font-bold text-indigo-950">Teacher Note on Penmanship:</span> &quot;{report.handwriting.notes}&quot;
+              </p>
+            )}
+          </div>
+
+          {/* Chronological Teacher Observations Across Dates & Clear Points */}
           <div className="border border-slate-200 rounded-2xl p-4 mb-6">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2.5 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span>Teacher Academic Observations & Action Plan</span>
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <span>Chronological Teacher Remarks & Action Points ({observations.length} on record)</span>
+              </h3>
+              <span className="text-[10px] font-bold text-slate-500 uppercase">
+                Multi-Date Timeline
+              </span>
+            </div>
 
             {observations.length === 0 ? (
               <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-medium">
                 ✓ Student is fully on track. No active behavioral or academic flags recorded.
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {observations.map((obs, idx) => (
                   <div
-                    key={idx}
-                    className={`p-3 rounded-xl border text-xs ${
+                    key={obs.id || idx}
+                    className={`p-3.5 rounded-xl border text-xs space-y-2 ${
                       obs.severity === 'red'
                         ? 'bg-rose-50/70 border-rose-200 text-rose-950'
                         : 'bg-amber-50/70 border-amber-200 text-amber-950'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-extrabold uppercase text-[10px] tracking-wider">
-                        {obs.severity === 'red' ? '🔴 High Priority Red Flag' : '🟡 Amber Concept Struggle'}
-                      </span>
-                      <span className="font-bold underline">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-800">
+                          📅 {obs.date || 'Recent Entry'}
+                        </span>
+                        <span className="font-extrabold uppercase text-[10px] tracking-wider">
+                          {obs.severity === 'red' ? '🔴 High Priority' : '🟡 Amber Warning'}
+                        </span>
+                        {obs.handwriting_tag && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-200">
+                            ✍️ {obs.handwriting_tag}
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-bold underline text-[11px]">
                         Action: {obs.action_type || obs.suggested_admin_action}
                       </span>
                     </div>
-                    <p className="font-medium mt-0.5">
+
+                    <p className="font-medium">
                       &quot;{obs.teacher_note}&quot;
                     </p>
+
+                    {/* Clear Structured Points for Indian Parents & Student */}
+                    {obs.structured_points && obs.structured_points.length > 0 && (
+                      <div className="p-2.5 rounded-xl bg-white/80 border border-slate-200 space-y-1">
+                        <div className="text-[10px] font-extrabold uppercase text-slate-700 tracking-wider">
+                          Clear Points for Parents & Student:
+                        </div>
+                        <ol className="list-decimal list-inside space-y-0.5 text-slate-800 font-medium pl-1">
+                          {obs.structured_points.map((point, pIdx) => (
+                            <li key={pIdx} className="leading-relaxed">
+                              {point}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {/* Action for Home Guidance */}
+                    {obs.action_for_home && (
+                      <div className="p-2 rounded-lg bg-amber-100/60 border border-amber-300 text-amber-950 text-[11px] font-medium flex items-center gap-1.5">
+                        <span className="font-bold shrink-0">🏠 Home Follow-Up:</span>
+                        <span>{obs.action_for_home}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

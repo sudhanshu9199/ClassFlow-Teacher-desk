@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import {
   DailyClassData,
   DailyGridStudentItem,
@@ -9,6 +9,8 @@ import {
   TeacherActionType,
   ObservationCategory,
   ObservationSeverity,
+  SchoolProfile,
+  HandwritingProfile,
 } from '@/types/database';
 import { DailyGridHeader } from './DailyGridHeader';
 import { AcceleratorBanner } from './AcceleratorBanner';
@@ -16,6 +18,7 @@ import { StudentRowCard } from './StudentRowCard';
 import { EscalationBottomSheet } from './EscalationBottomSheet';
 import { ClassRosterManagerModal } from './ClassRosterManagerModal';
 import { ClassFlowService } from '@/lib/supabase/service';
+import { DEFAULT_SCHOOL_PROFILE } from '@/lib/supabase/mock-data';
 import { CheckCircle, AlertTriangle, ArrowRight, RotateCcw, Sparkles, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 
@@ -26,6 +29,7 @@ interface ClassDailyViewProps {
 
 export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, classId }) => {
   const [data, setData] = useState<DailyClassData>(initialData);
+  const [schoolProfile, setSchoolProfile] = useState<SchoolProfile>(DEFAULT_SCHOOL_PROFILE);
   const [previousStates, setPreviousStates] = useState<DailyClassData | null>(null);
   const [selectedStudentForFlag, setSelectedStudentForFlag] =
     useState<DailyGridStudentItem | null>(null);
@@ -33,6 +37,14 @@ export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, cla
   const [isRosterModalOpen, setIsRosterModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    async function loadProfile() {
+      const profile = await ClassFlowService.getSchoolProfile();
+      setSchoolProfile(profile);
+    }
+    loadProfile();
+  }, []);
 
   const isLiveSupabase = ClassFlowService.isLiveSupabase();
 
@@ -125,13 +137,18 @@ export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, cla
     setIsSheetOpen(true);
   };
 
-  // 5. Save Observation / Flag
+  // 5. Save Observation / Flag / Handwriting Profile
   const handleSaveObservation = async (payload: {
     studentId: string;
     category: ObservationCategory;
     severity: ObservationSeverity;
     actionType: TeacherActionType;
     teacherNote: string;
+    structuredPoints?: string[];
+    actionForHome?: string;
+    handwritingTag?: string;
+    handwritingProfile?: Partial<HandwritingProfile>;
+    date?: string;
   }) => {
     const tempObs: Observation = {
       id: `temp-${Date.now()}`,
@@ -142,35 +159,57 @@ export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, cla
       severity: payload.severity,
       action_type: payload.actionType,
       teacher_note: payload.teacherNote,
+      structured_points: payload.structuredPoints,
+      action_for_home: payload.actionForHome,
+      handwriting_tag: payload.handwritingTag,
+      date: payload.date || new Date().toISOString().split('T')[0],
       status: 'todo',
       created_at: new Date().toISOString(),
     };
 
     setData((prev) => ({
       ...prev,
-      students: prev.students.map((item) =>
-        item.student.id === payload.studentId
-          ? { ...item, existingObservation: tempObs }
-          : item
-      ),
+      students: prev.students.map((item) => {
+        if (item.student.id !== payload.studentId) return item;
+        const currentAll = item.allObservations || (item.existingObservation ? [item.existingObservation] : []);
+        return {
+          ...item,
+          existingObservation: tempObs,
+          allObservations: [tempObs, ...currentAll.filter((o) => o.id !== tempObs.id)],
+          handwritingProfile: payload.handwritingProfile
+            ? ({ ...(item.handwritingProfile || {}), ...payload.handwritingProfile } as HandwritingProfile)
+            : item.handwritingProfile,
+        };
+      }),
     }));
 
     showToast(
-      `Saved intervention (${payload.severity === 'red' ? '🔴 High Red' : '🟡 Amber'}): ${payload.actionType}`
+      `Saved remark (${payload.severity === 'red' ? '🔴 High Red' : '🟡 Amber'}): ${payload.actionType}`
     );
 
     // Persist
     startTransition(async () => {
       try {
+        if (payload.handwritingProfile) {
+          await ClassFlowService.saveHandwritingProfile(classId, payload.studentId, payload.handwritingProfile);
+        }
         await ClassFlowService.saveObservation(classId, {
           studentId: payload.studentId,
           category: payload.category,
           severity: payload.severity,
           actionType: payload.actionType,
           teacherNote: payload.teacherNote,
+          structuredPoints: payload.structuredPoints,
+          actionForHome: payload.actionForHome,
+          handwritingTag: payload.handwritingTag,
+          date: payload.date,
         });
+
+        // Re-sync full data
+        const refreshed = await ClassFlowService.getDailyClassData(classId);
+        setData(refreshed);
       } catch (err) {
-        console.error('Failed to save flag:', err);
+        console.error('Failed to save remark:', err);
       }
     });
   };
@@ -237,6 +276,7 @@ export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, cla
         totalStudents={totalStudents}
         submittedCount={submittedCount}
         isLiveSupabase={isLiveSupabase}
+        schoolProfile={schoolProfile}
         onOpenRosterModal={() => setIsRosterModalOpen(true)}
       />
 
@@ -369,6 +409,11 @@ export const ClassDailyView: React.FC<ClassDailyViewProps> = ({ initialData, cla
         student={selectedStudentForFlag?.student || null}
         classNameTitle={data.classInfo.name}
         existingObservation={selectedStudentForFlag?.existingObservation}
+        allObservations={
+          selectedStudentForFlag?.allObservations ||
+          (selectedStudentForFlag?.existingObservation ? [selectedStudentForFlag.existingObservation] : [])
+        }
+        handwritingProfile={selectedStudentForFlag?.handwritingProfile}
         onClose={() => setIsSheetOpen(false)}
         onSave={handleSaveObservation}
       />

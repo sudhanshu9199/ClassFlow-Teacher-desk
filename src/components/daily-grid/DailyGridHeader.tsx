@@ -2,8 +2,9 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ClassItem, Assignment, Staff } from '@/types/database';
+import { ClassItem, Assignment, Staff, SchoolProfile } from '@/types/database';
 import { ArrowLeft, BookOpen, Calendar, Database, Sparkles, Users } from 'lucide-react';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
 
 interface DailyGridHeaderProps {
   classInfo: ClassItem;
@@ -12,6 +13,7 @@ interface DailyGridHeaderProps {
   totalStudents: number;
   submittedCount: number;
   isLiveSupabase: boolean;
+  schoolProfile?: SchoolProfile;
   onOpenRosterModal?: () => void;
 }
 
@@ -22,6 +24,7 @@ export const DailyGridHeader: React.FC<DailyGridHeaderProps> = ({
   totalStudents,
   submittedCount,
   isLiveSupabase,
+  schoolProfile,
   onOpenRosterModal,
 }) => {
   const completionPct =
@@ -30,15 +33,26 @@ export const DailyGridHeader: React.FC<DailyGridHeaderProps> = ({
   return (
     <header className="bg-white border-b border-slate-200/80 sticky top-0 z-30 shadow-xs safe-top">
       <div className="max-w-2xl mx-auto px-4 py-3">
-        {/* Top line: Navigation, Mode badge, School info */}
+        {/* Top line: Navigation, School Insignia, Mode badge */}
         <div className="flex items-center justify-between gap-2 mb-2">
-          <Link
-            href="/"
-            className="touch-target-48 tap-tactile -ml-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>My Classes</span>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="touch-target-48 tap-tactile -ml-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 inline-flex items-center gap-1.5 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">My Classes</span>
+            </Link>
+
+            {schoolProfile && (
+              <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200">
+                <SchoolLogoBadge profile={schoolProfile} size="sm" />
+                <span className="text-[11px] font-bold text-slate-700 truncate max-w-[120px] sm:max-w-[180px]">
+                  {schoolProfile.school_name}
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             {onOpenRosterModal && (

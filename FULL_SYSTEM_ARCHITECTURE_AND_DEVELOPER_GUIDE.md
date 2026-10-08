@@ -16,6 +16,8 @@
 7. [End-to-End Execution Flows & Lifecycle Diagrams](#7-end-to-end-execution-flows--lifecycle-diagrams)
 8. [AI Chatbot, LLM Agent & Automation Developer Playbook](#8-ai-chatbot-llm-agent--automation-developer-playbook)
 9. [Developer Onboarding, Environment Setup & Maintenance](#9-developer-onboarding-environment-setup--maintenance)
+10. [Institutional Customization, Handwriting Rubrics & Multi-Date Historical Engine (2026 Release)](#10-institutional-customization-handwriting-rubrics--multi-date-historical-engine-2026-release)
+11. [Summary & Sign-off](#11-summary--sign-off)
 
 ---
 
@@ -615,11 +617,82 @@ Route (app)
 
 ---
 
-## 10. Summary & Sign-off
+---
+
+## 10. Institutional Customization, Handwriting Rubrics & Multi-Date Historical Engine (2026 Release)
+
+### 10.1 School Profile & Dynamic Vector Insignia Generator
+ClassFlow provides a decentralized school branding engine tailored for Indian institutions (CBSE, ICSE, Cambridge, State Boards):
+- **Institutional Area & Locality Engine**: Supports official postal attributes (`institutional_area`, `campus_locality`, `city`), defaulting to *"Institutional Area, Model Town, New Delhi - 110009"*.
+- **CBSE/ICSE Affiliation Guard**: A toggleable state machine (`affiliation_known`) permitting either verified affiliation codes (e.g., `CBSE/AFF/2130045`) or unassigned provisional identifiers.
+- **Deterministic SVG Monogram Algorithm** ([`SchoolLogoBadge.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/components/common/SchoolLogoBadge.tsx)):
+  - Automatically parses any custom school name (e.g., *"Delhi Public Model School"* $\to$ `"DPMS"`, *"St. Xavier's Academy"* $\to$ `"SXA"`).
+  - Renders vector geometric badges across 4 customizable heraldic silhouettes: `shield`, `circle`, `rounded_crest`, and `hexagon`.
+  - Supports 5 curated 2026 academic palettes:
+    1. *Emerald & Mint* (`emerald-mint`)
+    2. *Indigo & Gold* (`indigo-gold`)
+    3. *Crimson & Amber* (`crimson-amber`)
+    4. *Royal Blue & Sky* (`blue-sky`)
+    5. *Slate Modern & Silver* (`slate-silver`)
+- **Settings Modal Component** ([`SchoolSettingsModal.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/components/common/SchoolSettingsModal.tsx)):
+  Provides instant live-preview editing, reactive state updates, and synchronized persistence via `ClassFlowService.saveSchoolProfile()`.
+
+### 10.2 Comprehensive Handwriting Assessment Rubric
+Handwriting is an essential pedagogical metric in Indian primary schooling (Classes 1–6). ClassFlow integrates a structured 4-pillar evaluation framework:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   PRIMARY HANDWRITING RUBRIC MATRIX                    │
+├───────────────────────┬────────────────────────────────────────────────┤
+│ Pillar 1: Baseline    │ - proper_baseline (Disciplined 4-line rule)     │
+│ Alignment             │ - fluctuating_baseline (Needs four-line guides)│
+│                       │ - descending_baseline (Slanted downwards)      │
+├───────────────────────┼────────────────────────────────────────────────┤
+│ Pillar 2: Letter      │ - clear_letter_sizing (Consistent ascenders)   │
+│ Formation & Cursive   │ - irregular_spacing (Words bunched together)   │
+│                       │ - cramped_letters (Needs spacing discipline)   │
+├───────────────────────┼────────────────────────────────────────────────┤
+│ Pillar 3: Neatness &  │ - very_tidy (Zero blotches / clean eraser use) │
+│ Erasure Discipline    │ - excessive_erasures (Frequent smudges/tears)  │
+│                       │ - ink_smudges (Improper pen grip / blotting)   │
+├───────────────────────┼────────────────────────────────────────────────┤
+│ Pillar 4: Formatting  │ - follows_date_margin (Clean left/top margin)  │
+│ & Margins             │ - ignores_margin (Starts outside margins)      │
+│                       │ - no_heading_underline (Missing date & labels) │
+├───────────────────────┼────────────────────────────────────────────────┤
+│ Longitudinal Trend    │ improving ↗ • steady ➔ • needs_practice ⚠️     │
+└───────────────────────┴────────────────────────────────────────────────┘
+```
+
+- **Data Model Integration**: Captured inside `HandwritingProfile` in [`src/types/database.ts`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/types/database.ts).
+- **Fast-Action UI Tags**: Teachers can select 1-tap handwriting chips inside [`EscalationBottomSheet.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/components/daily-grid/EscalationBottomSheet.tsx) (e.g. *✍️ Needs Four-Line Copy Practice*, *✨ Neat & Clear*, *📏 Maintain Left Margin*).
+- **PTM Dossier Presentation**: Rendered as a dedicated 4-pillar assessment block on the 1-page A4 print layout ([`src/app/students/[id]/ptm/page.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/app/students/[id]/ptm/page.tsx)).
+
+### 10.3 Multi-Date Historical Observation Engine with Structured Parent Points
+Unlike basic single-remark systems, primary teachers need to maintain ongoing developmental notes across multiple academic days:
+- **Chronological Audit Trail**: `DailyGridStudentItem.allObservations` preserves all dated remarks (`date`, `created_at`, `category`, `severity`, `status`).
+- **Structured Parent-Facing Bullet Points**:
+  - `structured_points: string[]`: Deconstructs teacher observations into polite, actionable numbered points readily understandable by parents.
+  - `action_for_home: string`: Explicit home directive (e.g., *"Ensure 1 page of 4-line cursive practice daily; review subtraction carry-over at home."*).
+- **Multi-Date Timeline Visualizer**:
+  - In [`StudentRowCard.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/components/daily-grid/StudentRowCard.tsx): Displays an indicator badge displaying total logged remarks count (`3 remarks on record`) and latest remark date.
+  - In [`EscalationBottomSheet.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/components/daily-grid/EscalationBottomSheet.tsx): Shows a reverse-chronological historical remarks drawer so teachers see past diary notes before adding new ones.
+  - In [`ptm/page.tsx`](file:///f:/CU_Sudhanshu_File/SCSchool/Job%20Ready/Project/p/src/app/students/[id]/ptm/page.tsx): Lists all dated remarks with severity indicators, structured bullet points, and prescribed home actions for PTM meetings.
+
+### 10.4 Clean Slate Classroom Management
+- **Zero Default Pre-Assignments**: `MOCK_CLASSES` initializes as an empty array (`[]`).
+- **Clean Slate Submissions**: All student items initialize with `submissionStatus: 'pending'` (zero pre-filled checkmarks or false positives).
+- **Optional Demo Seeder**: Teachers who wish to explore demo data can tap **"Load CBSE Grade 4A & 5B Demo Classes"** on the home screen at any time, or create fresh custom classes and enroll students manually.
+
+---
+
+## 11. Summary & Sign-off
 
 This document represents the complete technical source of truth for **ClassFlow**. Any human engineer or AI development agent reviewing this specification has full visibility into:
 * The exact database schema, keys, and RLS policies.
 * The dual-mode client/server service architecture.
 * The mobile-first design tokens and 60-second logging state machine.
 * The deterministic mathematical scoring engine for interventions.
+* The institutional branding and dynamic SVG crest generator.
+* The 4-pillar handwriting evaluation framework and multi-date historical remarks engine.
 * The ready-to-wire tool definitions for AI Chatbot integration.

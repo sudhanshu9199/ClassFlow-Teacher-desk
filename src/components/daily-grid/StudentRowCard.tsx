@@ -64,6 +64,35 @@ export const StudentRowCard: React.FC<StudentRowCardProps> = ({
                   {recentMissingCount} Missed
                 </span>
               )}
+
+              {/* Handwriting Evaluation Badge */}
+              {item.handwritingProfile && (
+                <span
+                  className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    item.handwritingProfile.overall_grade === 'needs_practice'
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : item.handwritingProfile.overall_grade === 'improving'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                  }`}
+                  title={item.handwritingProfile.notes || 'Handwriting profile assessment'}
+                >
+                  {item.handwritingProfile.overall_grade === 'needs_practice' && '✍️ Penmanship'}
+                  {item.handwritingProfile.overall_grade === 'improving' && '📈 Improving HW'}
+                  {(item.handwritingProfile.overall_grade === 'neat' || item.handwritingProfile.overall_grade === 'excellent') && '✨ Neat Penmanship'}
+                  {item.handwritingProfile.overall_grade === 'developing' && '📝 Developing'}
+                </span>
+              )}
+
+              {/* Multi-date Historical Remarks Badge */}
+              {item.allObservations && item.allObservations.length > 1 && (
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-300"
+                  title={`${item.allObservations.length} remarks recorded across different dates`}
+                >
+                  📅 {item.allObservations.length} Dates Logged
+                </span>
+              )}
             </div>
 
             <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5 flex-wrap">
@@ -148,15 +177,25 @@ export const StudentRowCard: React.FC<StudentRowCardProps> = ({
           }`}
         >
           <div className="flex items-center gap-1.5 truncate">
+            {existingObservation.date && (
+              <span className="font-mono text-[10px] font-bold px-1 py-0.2 rounded bg-black/5 shrink-0">
+                {existingObservation.date.slice(5)}
+              </span>
+            )}
             <span className="font-bold uppercase tracking-wider text-[10px]">
               Action:
             </span>
             <span className="font-medium underline decoration-dotted">
               {existingObservation.action_type || existingObservation.suggested_admin_action || 'Action Plan'}
             </span>
-            <span className="text-slate-500 truncate max-w-[200px]">
+            <span className="text-slate-600 truncate max-w-[200px]">
               — &quot;{existingObservation.teacher_note}&quot;
             </span>
+            {existingObservation.structured_points && existingObservation.structured_points.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 shrink-0">
+                {existingObservation.structured_points.length} Pts
+              </span>
+            )}
           </div>
           <span className="text-[10px] opacity-70 underline shrink-0 ml-2">Edit</span>
         </div>

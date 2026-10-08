@@ -15,6 +15,7 @@ import {
   FileText,
   Building2,
   Sparkles,
+  PenTool,
 } from 'lucide-react';
 import { ClassFlowService } from '@/lib/supabase/service';
 import {
@@ -22,6 +23,8 @@ import {
   StudentPtmReport,
   ClassConsolidatedRow,
 } from '@/types/database';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
+import { DEFAULT_SCHOOL_PROFILE } from '@/lib/supabase/mock-data';
 
 export default function ReportsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -102,7 +105,7 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
 
   const exportCsv = () => {
     if (!ledgerRows.length) return;
-    const headers = ['Roll No', 'Name', 'Phone', 'HW Assigned', 'HW Submitted', 'HW %', 'Test Avg %', 'Status'];
+    const headers = ['Roll No', 'Name', 'Phone', 'HW Assigned', 'HW Submitted', 'HW %', 'Test Avg %', 'Handwriting', 'Status'];
     const rows = ledgerRows.map((r) => [
       r.rollNumber,
       `"${r.studentName}"`,
@@ -111,6 +114,7 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
       r.hwSubmitted,
       `${r.hwCompletionPct}%`,
       `${r.avgTestPct}%`,
+      `"${r.handwritingGrade || 'Neat'}"`,
       r.interventionStatus,
     ]);
 
@@ -248,17 +252,37 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
             {/* Printable 1-Page PTM Dossier Sheet */}
             {ptmReport && (
               <div className="bg-white rounded-2xl border border-slate-300 p-6 sm:p-8 shadow-sm space-y-6 print:border-none print:shadow-none print:p-0">
-                {/* Official School Header */}
-                <div className="border-b-2 border-slate-900 pb-4 text-center space-y-1">
-                  <div className="text-[11px] font-extrabold tracking-widest uppercase text-slate-500">
-                    Official Student Performance & PTM Brief
+                {/* Official School Header with Dynamic Insignia */}
+                <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <SchoolLogoBadge profile={ptmReport.schoolProfile || DEFAULT_SCHOOL_PROFILE} size="md" />
+                    <div>
+                      <div className="text-[10px] font-extrabold tracking-widest uppercase text-slate-500">
+                        Official Student Performance & PTM Brief
+                      </div>
+                      <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight uppercase">
+                        {ptmReport.schoolProfile?.school_name || classData.teacher.school_name || 'DELHI PUBLIC MODEL SCHOOL'}
+                      </h2>
+                      <p className="text-xs text-slate-600 font-medium">
+                        {classData.classInfo.name} • {classData.classInfo.subject} • Academic Session 2026-2027
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {ptmReport.schoolProfile?.institutional_area || 'Institutional Area'}, {ptmReport.schoolProfile?.campus_locality || 'Model Town'}, {ptmReport.schoolProfile?.city || 'New Delhi'} •{' '}
+                        {ptmReport.schoolProfile?.affiliation_known
+                          ? `${ptmReport.schoolProfile?.board_affiliation || 'CBSE'} Affiliation No: ${ptmReport.schoolProfile?.affiliation_number}`
+                          : 'State Primary Directorate'}
+                      </p>
+                    </div>
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    {classData.teacher.school_name || 'Primary Model School'}
-                  </h2>
-                  <p className="text-xs text-slate-600 font-medium">
-                    {classData.classInfo.name} • {classData.classInfo.subject} • Academic Session 2026-2027
-                  </p>
+
+                  <div className="text-right shrink-0">
+                    <span className="inline-block px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 font-mono font-extrabold text-xs border border-slate-200">
+                      AY 2026–2027
+                    </span>
+                    <p className="text-[10px] text-slate-500 mt-1 uppercase font-semibold">
+                      Generated {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Student Info Grid */}
@@ -346,19 +370,82 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
                   </div>
                 </div>
 
-                {/* Section 3: Teacher Observations & Action Items */}
+                {/* Section 3: Handwriting & Notebook Presentation Assessment */}
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 border-b border-slate-200 pb-1.5 mb-3">
-                    3. Teacher Remarks & Agreed Next Steps
-                  </h3>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                      <PenTool className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>3. Handwriting & Notebook Presentation Assessment</span>
+                    </h3>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 capitalize">
+                      {ptmReport.handwriting?.overall_grade === 'needs_practice'
+                        ? '✍️ Practice Required'
+                        : ptmReport.handwriting?.overall_grade === 'improving'
+                        ? '📈 Improvement Trend'
+                        : ptmReport.handwriting?.overall_grade === 'neat' || ptmReport.handwriting?.overall_grade === 'excellent'
+                        ? '✨ Neat & Clear'
+                        : 'Developing Discipline'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-2">
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">4-Line Baseline Alignment</span>
+                      <span className="font-bold text-slate-800">
+                        {ptmReport.handwriting?.alignment_grade === 'needs_practice' ? '⚠️ Alignment Drill' : '✓ Good Line Discipline'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Letter Formation & Cursive</span>
+                      <span className="font-bold text-slate-800">
+                        {ptmReport.handwriting?.letter_formation_grade || 'Clear & Legible'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Neatness & Erasures</span>
+                      <span className="font-bold text-slate-800">
+                        {ptmReport.handwriting?.neatness_grade === 'needs_practice' ? '⚠️ Frequent Erasures' : '✓ Clean & Neat'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Margins & Date Format</span>
+                      <span className="font-bold text-slate-800">
+                        {ptmReport.handwriting?.formatting_grade || '✓ Regular Margin'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {ptmReport.handwriting?.notes && (
+                    <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2 font-medium">
+                      <span className="font-bold text-slate-900">Penmanship Note:</span> &quot;{ptmReport.handwriting.notes}&quot;
+                    </p>
+                  )}
+                </div>
+
+                {/* Section 4: Chronological Teacher Remarks & Action Points */}
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                      <span>4. Teacher Remarks Across Dates ({ptmReport.observations.length} on file)</span>
+                    </h3>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      Timeline Log
+                    </span>
+                  </div>
+
                   {ptmReport.observations.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {ptmReport.observations.map((obs, i) => (
-                        <div key={i} className="p-3 bg-indigo-50/50 border border-indigo-200 rounded-xl text-xs space-y-1">
+                        <div key={obs.id || i} className="p-3 bg-indigo-50/40 border border-indigo-200 rounded-xl text-xs space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-indigo-950">
-                              Action Item: {obs.action_type}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-800">
+                                📅 {obs.date || 'Recent Entry'}
+                              </span>
+                              <span className="font-extrabold text-indigo-950">
+                                Action: {obs.action_type}
+                              </span>
+                            </div>
                             <span
                               className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
                                 obs.severity === 'red' ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'
@@ -367,7 +454,28 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
                               {obs.severity === 'red' ? 'High Priority' : 'Attention'}
                             </span>
                           </div>
-                          <p className="text-slate-700 italic">&quot;{obs.teacher_note}&quot;</p>
+
+                          <p className="text-slate-800 font-medium">&quot;{obs.teacher_note}&quot;</p>
+
+                          {/* Clear Points for Parents */}
+                          {obs.structured_points && obs.structured_points.length > 0 && (
+                            <div className="p-2 rounded-lg bg-white/80 border border-slate-200 space-y-0.5">
+                              <div className="text-[10px] font-extrabold uppercase text-slate-700 tracking-wider">
+                                Clear Points for Parents & Student:
+                              </div>
+                              <ul className="space-y-0.5 text-slate-700 font-medium pl-1">
+                                {obs.structured_points.map((pt, ptIdx) => (
+                                  <li key={ptIdx}>• {pt}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {obs.action_for_home && (
+                            <div className="p-2 rounded-lg bg-amber-100/70 border border-amber-300 text-amber-950 text-[11px] font-medium">
+                              <span className="font-bold">🏠 Home Guidance:</span> {obs.action_for_home}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -430,6 +538,7 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
                       <th className="py-3 px-3.5">Contact</th>
                       <th className="py-3 px-3.5 text-center">HW Status</th>
                       <th className="py-3 px-3.5 text-center">Test Avg</th>
+                      <th className="py-3 px-3.5 text-center">Handwriting</th>
                       <th className="py-3 px-3.5 text-center">Status</th>
                     </tr>
                   </thead>
@@ -454,6 +563,17 @@ export default function ReportsPage({ params }: { params: Promise<{ id: string }
                         </td>
                         <td className="py-3 px-3.5 text-center font-bold text-slate-800">
                           {row.avgTestPct}%
+                        </td>
+                        <td className="py-3 px-3.5 text-center">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                            {row.handwritingGrade === 'needs_practice'
+                              ? '✍️ Practice'
+                              : row.handwritingGrade === 'improving'
+                              ? '📈 Improving'
+                              : row.handwritingGrade === 'neat' || row.handwritingGrade === 'excellent'
+                              ? '✨ Neat'
+                              : 'Developing'}
+                          </span>
                         </td>
                         <td className="py-3 px-3.5 text-center">
                           <span

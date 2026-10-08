@@ -21,11 +21,14 @@ import {
   Search,
 } from 'lucide-react';
 import { ClassFlowService } from '@/lib/supabase/service';
-import { AttentionQueueItem, ClassItem } from '@/types/database';
+import { AttentionQueueItem, ClassItem, SchoolProfile } from '@/types/database';
+import { SchoolLogoBadge } from '@/components/common/SchoolLogoBadge';
+import { DEFAULT_SCHOOL_PROFILE } from '@/lib/supabase/mock-data';
 
 export default function CoordinatorReviewPage() {
   const [queueItems, setQueueItems] = useState<AttentionQueueItem[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [schoolProfile, setSchoolProfile] = useState<SchoolProfile>(DEFAULT_SCHOOL_PROFILE);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [severityFilter, setSeverityFilter] = useState<'all' | 'red' | 'amber'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,12 +41,14 @@ export default function CoordinatorReviewPage() {
 
   useEffect(() => {
     async function load() {
-      const [items, clsList] = await Promise.all([
+      const [items, clsList, profile] = await Promise.all([
         ClassFlowService.getAttentionQueue(),
         ClassFlowService.getAllClasses(),
+        ClassFlowService.getSchoolProfile(),
       ]);
       setQueueItems(items);
       setClasses(clsList);
+      setSchoolProfile(profile);
     }
     load();
   }, []);
@@ -137,6 +142,8 @@ export default function CoordinatorReviewPage() {
               <ChevronLeft className="w-5 h-5" />
             </Link>
 
+            <SchoolLogoBadge profile={schoolProfile} size="sm" />
+
             <div>
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
@@ -147,8 +154,8 @@ export default function CoordinatorReviewPage() {
                   </span>
                 </h1>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Mr. Rajesh Gupta • Delhi Public Model School (Classes 1–6)
+              <p className="text-[11px] text-slate-400 truncate max-w-xs">
+                {schoolProfile.school_name} • Classes 1–6
               </p>
             </div>
           </div>
