@@ -1,0 +1,46 @@
+Project: ClassFlow — Teacher Workflow & Student Intervention System
+
+Its core promise:
+
+“At the end of every school day, a teacher should know exactly which students need attention and what work is still pending.”
+
+MVP could be only:
+
+Login
+ ↓
+My Classes
+ ↓
+Students
+ ↓
+Observations
+ ↓
+Homework
+ ↓
+Assessments
+ ↓
+Attention Queue
+ ↓
+Student Timeline
+ ↓
+PTM Summary
+
+[
+    Suggested Action Items: Pre-defined tag selections (e.g., "Schedule parent call", "Assign remedial worksheet", "Monitor peer interactions").
+
+4. Implementation Roadmap (Sprint 1 to MVP)
+Step 1: Database Setup & RLS (Supabase)
+
+Initialize a free Supabase project.
+
+Configure Row-Level Security (RLS) policies so teachers can only read and write data for their assigned classes and students.
+
+Step 2: Rapid Data Entry UI
+
+Build the Daily Class Grid (/classes/[id]/daily) using a compact tabular format with keyboard-friendly inputs (e.g., Space to toggle submission status, 1-click badge to drop a flag).
+
+Ensure end-of-day logging takes less than 60–90 seconds per class.
+
+Step 3: The End-of-Day Attention QueueBuild /dashboard/attention-queue using the deterministic scoring query.Render cards categorized by urgency:Red (High Priority): $\ge 2$ consecutive missing assignments or active high-severity behavioral/academic flags.Amber (Medium Priority): Single missing assignment or minor concept struggle.
+
+Step 4: Printable / Exportable PTM SheetUse standard browser print CSS (@media print) on the /students/[id]/ptm route so teachers can generate a clean 1-page PDF report for parents with zero paid document-export services.
+]
