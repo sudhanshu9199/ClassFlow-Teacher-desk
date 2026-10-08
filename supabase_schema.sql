@@ -1,10 +1,10 @@
 -- ============================================================================
 -- ClassFlow: Teacher Workflow & Student Intervention System (Indian Primary Schools 1-6)
--- Complete Supabase PostgreSQL Schema, RLS Policies, Aggregations & Seed Data
+-- Complete Supabase PostgreSQL Schema, Hardened RLS, Optimized Aggregations
+-- 100% Idempotent - Safe to run and re-run in Supabase SQL Editor
 -- ============================================================================
 
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Enable required cryptographic extension
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================================================
@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS public.staff (
     full_name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('teacher', 'coordinator', 'principal', 'admin')),
     school_name TEXT NOT NULL DEFAULT 'Primary Model School',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 1.2 Classes (e.g., Class 4-A Mathematics)
@@ -30,7 +31,8 @@ CREATE TABLE IF NOT EXISTS public.classes (
     subject TEXT NOT NULL, -- e.g. "Mathematics", "EVS", "English"
     class_teacher_id UUID NOT NULL REFERENCES public.staff(id) ON DELETE RESTRICT,
     academic_year TEXT NOT NULL DEFAULT '2026-2027',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 1.3 Students
@@ -43,10 +45,11 @@ CREATE TABLE IF NOT EXISTS public.students (
     father_name TEXT,
     mother_name TEXT,
     primary_contact TEXT NOT NULL, -- Phone / WhatsApp contact of parent
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 1.4 Enrollments (Class ↔ Student Junction)
+-- 1.4 Enrollments (Class <-> Student Junction)
 CREATE TABLE IF NOT EXISTS public.enrollments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
@@ -64,7 +67,8 @@ CREATE TABLE IF NOT EXISTS public.assignments (
     description TEXT,
     type TEXT NOT NULL DEFAULT 'homework' CHECK (type IN ('homework', 'classwork', 'project')),
     due_date DATE NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 1.6 Submissions (Rapid Entry Grid Records)
@@ -74,6 +78,7 @@ CREATE TABLE IF NOT EXISTS public.submissions (
     student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('submitted', 'incomplete', 'missing', 'absent', 'pending')),
     logged_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_assignment_student UNIQUE (assignment_id, student_id)
 );
 
@@ -82,9 +87,10 @@ CREATE TABLE IF NOT EXISTS public.assessments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     class_id UUID NOT NULL REFERENCES public.classes(id) ON DELETE CASCADE,
     title TEXT NOT NULL, -- e.g. "Periodic Test 1", "Mental Math Quiz"
-    max_marks NUMERIC(5,2) NOT NULL DEFAULT 25.00,
+    max_marks NUMERIC(5,2) NOT NULL DEFAULT 25.00 CHECK (max_marks > 0),
     assessment_date DATE NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 1.8 Assessment Scores
@@ -95,7 +101,9 @@ CREATE TABLE IF NOT EXISTS public.assessment_scores (
     marks_obtained NUMERIC(5,2),
     is_absent BOOLEAN NOT NULL DEFAULT false,
     remarks TEXT,
-    CONSTRAINT uq_assessment_student UNIQUE (assessment_id, student_id)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_assessment_student UNIQUE (assessment_id, student_id),
+    CONSTRAINT chk_marks_non_negative CHECK (marks_obtained IS NULL OR marks_obtained >= 0)
 );
 
 -- 1.9 Observations & Admin Escalation Flags
@@ -117,7 +125,8 @@ CREATE TABLE IF NOT EXISTS public.observations (
     admin_feedback TEXT,
     approved_by UUID REFERENCES public.staff(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    actioned_at TIMESTAMPTZ
+    actioned_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 1.10 Report Exports Audit Log
@@ -130,22 +139,44 @@ CREATE TABLE IF NOT EXISTS public.report_exports (
     timeframe TEXT NOT NULL CHECK (timeframe IN ('daily', 'weekly', 'monthly', 'custom')),
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    exported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    exported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_report_date_range CHECK (end_date >= start_date)
 );
 
 -- ============================================================================
--- 2. INDEXES FOR HIGH-SPEED LOGGING (60-90s RAPID QUERIES)
+-- 2. INDEXES (QUERY-SPECIFIC, MINIMAL WRITE OVERHEAD)
 -- ============================================================================
+
+-- Classes: Teacher dashboard lookup
 CREATE INDEX IF NOT EXISTS idx_classes_teacher ON public.classes(class_teacher_id);
-CREATE INDEX IF NOT EXISTS idx_enrollments_class ON public.enrollments(class_id);
-CREATE INDEX IF NOT EXISTS idx_enrollments_student ON public.enrollments(student_id);
+
+-- Enrollments: Class roster retrieval & student historical lookup
+CREATE INDEX IF NOT EXISTS idx_enrollments_class_student ON public.enrollments(class_id, student_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_student_year ON public.enrollments(student_id, academic_year);
+
+-- Assignments: Daily tracking by class and due date
 CREATE INDEX IF NOT EXISTS idx_assignments_class_due ON public.assignments(class_id, due_date);
-CREATE INDEX IF NOT EXISTS idx_submissions_lookup ON public.submissions(assignment_id, student_id);
-CREATE INDEX IF NOT EXISTS idx_observations_student_status ON public.observations(student_id, admin_status);
-CREATE INDEX IF NOT EXISTS idx_assessments_class ON public.assessments(class_id);
+
+-- Submissions:
+-- Note: uq_assignment_student UNIQUE (assignment_id, student_id) already creates the primary composite index.
+-- This index supports reverse lookup by student:
+CREATE INDEX IF NOT EXISTS idx_submissions_student_assignment ON public.submissions(student_id, assignment_id);
+
+-- Assessments: Class tests sorted by date
+CREATE INDEX IF NOT EXISTS idx_assessments_class_date ON public.assessments(class_id, assessment_date);
+
+-- Assessment Scores: Lookup by student
+CREATE INDEX IF NOT EXISTS idx_scores_student_assessment ON public.assessment_scores(student_id, assessment_id);
+
+-- Observations: Class student history & high-speed partial index for coordinator pending review
+CREATE INDEX IF NOT EXISTS idx_observations_class_student_date ON public.observations(class_id, student_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_observations_pending ON public.observations(class_id, student_id, created_at) WHERE admin_status = 'pending_review';
+
+-- Report Exports: Teacher audit trail
+CREATE INDEX IF NOT EXISTS idx_report_exports_teacher_date ON public.report_exports(teacher_id, exported_at DESC);
 
 -- ============================================================================
--- 3. ROW-LEVEL SECURITY (RLS) POLICIES
+-- 3. ROW-LEVEL SECURITY (RLS) POLICIES & HELPER
 -- ============================================================================
 
 ALTER TABLE public.staff ENABLE ROW LEVEL SECURITY;
@@ -159,139 +190,176 @@ ALTER TABLE public.assessment_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.observations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.report_exports ENABLE ROW LEVEL SECURITY;
 
--- Helper function to check if current user is admin/coordinator
+-- 3.0 Hardened Security Definer Helper (Pinned search_path, STABLE cacheable)
 CREATE OR REPLACE FUNCTION public.is_admin_or_coordinator()
-RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+    SELECT EXISTS (
         SELECT 1 FROM public.staff
-        WHERE staff.id = auth.uid()
-        AND staff.role IN ('coordinator', 'principal', 'admin')
+        WHERE public.staff.id = (SELECT auth.uid())
+          AND public.staff.role IN ('coordinator', 'principal', 'admin')
     );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- Staff Policies
+-- 3.1 Staff Policies (IDEMPOTENT with DROP POLICY IF EXISTS)
+DROP POLICY IF EXISTS "Staff can view their own profile or admins can view all" ON public.staff;
 CREATE POLICY "Staff can view their own profile or admins can view all"
 ON public.staff FOR SELECT
-USING (auth.uid() = id OR public.is_admin_or_coordinator());
+USING ((SELECT auth.uid()) = id OR (SELECT public.is_admin_or_coordinator()));
 
--- Classes Policies
+-- 3.2 Classes Policies
+DROP POLICY IF EXISTS "Teachers can view their assigned classes, admins can view all" ON public.classes;
 CREATE POLICY "Teachers can view their assigned classes, admins can view all"
 ON public.classes FOR SELECT
-USING (class_teacher_id = auth.uid() OR public.is_admin_or_coordinator());
+USING (class_teacher_id = (SELECT auth.uid()) OR (SELECT public.is_admin_or_coordinator()));
 
--- Students Policies
+-- 3.3 Students Policies
+DROP POLICY IF EXISTS "Staff can view students in their enrolled classes" ON public.students;
 CREATE POLICY "Staff can view students in their enrolled classes"
 ON public.students FOR SELECT
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.enrollments e
         JOIN public.classes c ON c.id = e.class_id
         WHERE e.student_id = students.id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
--- Enrollments Policies
+DROP POLICY IF EXISTS "Staff can insert students for their classes" ON public.students;
+CREATE POLICY "Staff can insert students for their classes"
+ON public.students FOR INSERT
+WITH CHECK (
+    (SELECT public.is_admin_or_coordinator()) OR
+    (SELECT auth.uid()) IS NOT NULL
+);
+
+-- 3.4 Enrollments Policies
+DROP POLICY IF EXISTS "Teachers view enrollments for their classes" ON public.enrollments;
 CREATE POLICY "Teachers view enrollments for their classes"
 ON public.enrollments FOR SELECT
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.classes c
         WHERE c.id = enrollments.class_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
--- Assignments Policies
+DROP POLICY IF EXISTS "Teachers can insert enrollments for their classes" ON public.enrollments;
+CREATE POLICY "Teachers can insert enrollments for their classes"
+ON public.enrollments FOR INSERT
+WITH CHECK (
+    (SELECT public.is_admin_or_coordinator()) OR
+    EXISTS (
+        SELECT 1 FROM public.classes c
+        WHERE c.id = enrollments.class_id
+          AND c.class_teacher_id = (SELECT auth.uid())
+    )
+);
+
+-- 3.5 Assignments Policies
+DROP POLICY IF EXISTS "Teachers can manage assignments for their classes" ON public.assignments;
 CREATE POLICY "Teachers can manage assignments for their classes"
 ON public.assignments FOR ALL
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.classes c
         WHERE c.id = assignments.class_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
--- Submissions Policies (Rapid Daily Grid)
+-- 3.6 Submissions Policies (Rapid Daily Grid)
+DROP POLICY IF EXISTS "Teachers can manage submissions for their classes" ON public.submissions;
 CREATE POLICY "Teachers can manage submissions for their classes"
 ON public.submissions FOR ALL
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.assignments a
         JOIN public.classes c ON c.id = a.class_id
         WHERE a.id = submissions.assignment_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
--- Assessments & Scores Policies
+-- 3.7 Assessments Policies
+DROP POLICY IF EXISTS "Teachers can manage assessments for their classes" ON public.assessments;
 CREATE POLICY "Teachers can manage assessments for their classes"
 ON public.assessments FOR ALL
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.classes c
         WHERE c.id = assessments.class_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
+-- 3.8 Assessment Scores Policies
+DROP POLICY IF EXISTS "Teachers can manage assessment scores for their classes" ON public.assessment_scores;
 CREATE POLICY "Teachers can manage assessment scores for their classes"
 ON public.assessment_scores FOR ALL
 USING (
-    public.is_admin_or_coordinator() OR
+    (SELECT public.is_admin_or_coordinator()) OR
     EXISTS (
         SELECT 1 FROM public.assessments a
         JOIN public.classes c ON c.id = a.class_id
         WHERE a.id = assessment_scores.assessment_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
--- Observations (Teacher creates/views; Admin reviews/approves)
+-- 3.9 Observations Policies (Teacher creates/views; Admin reviews/approves)
+DROP POLICY IF EXISTS "Teachers can view observations for their classes" ON public.observations;
 CREATE POLICY "Teachers can view observations for their classes"
 ON public.observations FOR SELECT
 USING (
-    teacher_id = auth.uid() OR
-    public.is_admin_or_coordinator()
+    teacher_id = (SELECT auth.uid()) OR
+    (SELECT public.is_admin_or_coordinator())
 );
 
+DROP POLICY IF EXISTS "Teachers can insert observations for their classes" ON public.observations;
 CREATE POLICY "Teachers can insert observations for their classes"
 ON public.observations FOR INSERT
 WITH CHECK (
-    teacher_id = auth.uid() AND
+    teacher_id = (SELECT auth.uid()) AND
     EXISTS (
         SELECT 1 FROM public.classes c
         WHERE c.id = observations.class_id
-        AND c.class_teacher_id = auth.uid()
+          AND c.class_teacher_id = (SELECT auth.uid())
     )
 );
 
+DROP POLICY IF EXISTS "Admins can update observation status and feedback" ON public.observations;
 CREATE POLICY "Admins can update observation status and feedback"
 ON public.observations FOR UPDATE
-USING (public.is_admin_or_coordinator());
+USING ((SELECT public.is_admin_or_coordinator()));
 
--- Report Exports Policies
+-- 3.10 Report Exports Policies
+DROP POLICY IF EXISTS "Teachers can manage their own report exports" ON public.report_exports;
 CREATE POLICY "Teachers can manage their own report exports"
 ON public.report_exports FOR ALL
-USING (teacher_id = auth.uid() OR public.is_admin_or_coordinator());
-
+USING (teacher_id = (SELECT auth.uid()) OR (SELECT public.is_admin_or_coordinator()));
 
 -- ============================================================================
--- 4. DETERMINISTIC ATTENTION QUEUE VIEWS
+-- 4. DETERMINISTIC ATTENTION QUEUE VIEW
+-- Protected by security_invoker = true to guarantee underlying RLS enforcement
+-- Uses DISTINCT ON to reliably fetch newest observation note instead of MAX()
 -- ============================================================================
 
--- Teacher's Attention Queue View (Computes Red / Amber priority on the fly)
-CREATE OR REPLACE VIEW public.v_teacher_attention_queue AS
+CREATE OR REPLACE VIEW public.v_teacher_attention_queue
+WITH (security_invoker = true) AS
 WITH student_missing_hw AS (
-    -- Count missing homework in the last 7 days
+    -- Count missing or incomplete homework in the last 14 days
     SELECT
         sub.student_id,
         asg.class_id,
@@ -302,61 +370,79 @@ WITH student_missing_hw AS (
       AND asg.due_date >= (CURRENT_DATE - INTERVAL '14 days')
     GROUP BY sub.student_id, asg.class_id
 ),
-active_flags AS (
-    -- Count open flags
+pending_flags_summary AS (
+    -- Count open pending flags per student and class
     SELECT
         obs.student_id,
         obs.class_id,
-        COUNT(CASE WHEN obs.severity = 'red' AND obs.admin_status = 'pending_review' THEN 1 END) AS red_flags,
-        COUNT(CASE WHEN obs.severity = 'amber' AND obs.admin_status = 'pending_review' THEN 1 END) AS amber_flags,
-        MAX(obs.suggested_admin_action) AS latest_suggested_action,
-        MAX(obs.teacher_note) AS latest_teacher_note
+        COUNT(CASE WHEN obs.severity = 'red' THEN 1 END) AS red_flags,
+        COUNT(CASE WHEN obs.severity = 'amber' THEN 1 END) AS amber_flags
     FROM public.observations obs
     WHERE obs.admin_status = 'pending_review'
     GROUP BY obs.student_id, obs.class_id
+),
+latest_observation AS (
+    -- Precise latest pending observation per student using DISTINCT ON
+    SELECT DISTINCT ON (obs.student_id, obs.class_id)
+        obs.student_id,
+        obs.class_id,
+        obs.suggested_admin_action,
+        obs.teacher_note,
+        obs.created_at
+    FROM public.observations obs
+    WHERE obs.admin_status = 'pending_review'
+    ORDER BY obs.student_id, obs.class_id, obs.created_at DESC
 )
 SELECT
     s.id AS student_id,
     s.admission_number,
     s.roll_number,
-    s.first_name || ' ' || s.last_name AS student_name,
+    (s.first_name || ' ' || s.last_name)::TEXT AS student_name,
     c.id AS class_id,
     c.name AS class_name,
     c.subject,
     c.class_teacher_id,
     COALESCE(m.recent_missing_count, 0) AS recent_missing_hw_count,
-    COALESCE(f.red_flags, 0) AS pending_red_flags,
-    COALESCE(f.amber_flags, 0) AS pending_amber_flags,
-    f.latest_suggested_action,
-    f.latest_teacher_note,
+    COALESCE(pfs.red_flags, 0) AS pending_red_flags,
+    COALESCE(pfs.amber_flags, 0) AS pending_amber_flags,
+    lo.suggested_admin_action AS latest_suggested_action,
+    lo.teacher_note AS latest_teacher_note,
     CASE
-        WHEN COALESCE(f.red_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) >= 2 THEN 'HIGH_PRIORITY_RED'
-        WHEN COALESCE(f.amber_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) = 1 THEN 'MEDIUM_PRIORITY_AMBER'
+        WHEN COALESCE(pfs.red_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) >= 2 THEN 'HIGH_PRIORITY_RED'
+        WHEN COALESCE(pfs.amber_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) = 1 THEN 'MEDIUM_PRIORITY_AMBER'
         ELSE 'ON_TRACK_GREEN'
     END AS urgency_level
 FROM public.enrollments e
 JOIN public.students s ON s.id = e.student_id
 JOIN public.classes c ON c.id = e.class_id
 LEFT JOIN student_missing_hw m ON m.student_id = s.id AND m.class_id = c.id
-LEFT JOIN active_flags f ON f.student_id = s.id AND f.class_id = c.id
-WHERE (COALESCE(f.red_flags, 0) > 0 OR COALESCE(f.amber_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) > 0);
-
+LEFT JOIN pending_flags_summary pfs ON pfs.student_id = s.id AND pfs.class_id = c.id
+LEFT JOIN latest_observation lo ON lo.student_id = s.id AND lo.class_id = c.id
+WHERE (COALESCE(pfs.red_flags, 0) > 0 OR COALESCE(pfs.amber_flags, 0) > 0 OR COALESCE(m.recent_missing_count, 0) > 0);
 
 -- ============================================================================
--- 5. REPORTING FUNCTIONS (INDIVIDUAL PTM & CLASS-WIDE CONSOLIDATED LEDGER)
+-- 5. REPORTING FUNCTIONS (SECURITY INVOKER, NO CARTESIAN MULTIPLICATION)
 -- ============================================================================
 
--- 5.1 Individual Student PTM Report Aggregation (Daily, Weekly, Monthly)
+-- 5.1 Individual Student PTM Report (SECURITY INVOKER, Index-Friendly Timestamps)
 CREATE OR REPLACE FUNCTION public.fn_student_ptm_report(
     p_student_id UUID,
     p_class_id UUID,
     p_start_date DATE,
     p_end_date DATE
 )
-RETURNS JSON AS $$
+RETURNS JSON
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+AS $$
 DECLARE
     result JSON;
 BEGIN
+    IF p_start_date > p_end_date THEN
+        RAISE EXCEPTION 'start_date (%) cannot be after end_date (%)', p_start_date, p_end_date;
+    END IF;
+
     SELECT json_build_object(
         'student', (
             SELECT json_build_object(
@@ -426,16 +512,16 @@ BEGIN
             FROM public.observations obs
             WHERE obs.student_id = p_student_id
               AND obs.class_id = p_class_id
-              AND obs.created_at::DATE BETWEEN p_start_date AND p_end_date
+              AND obs.created_at >= p_start_date
+              AND obs.created_at < p_end_date + INTERVAL '1 day'
         )
     ) INTO result;
 
     RETURN result;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
-
--- 5.2 Class-Wide Consolidated Ledger Report
+-- 5.2 Class-Wide Consolidated Ledger (SECURITY INVOKER, Separate CTEs eliminate Cartesian join explosion)
 CREATE OR REPLACE FUNCTION public.fn_class_consolidated_report(
     p_class_id UUID,
     p_start_date DATE,
@@ -453,43 +539,88 @@ RETURNS TABLE (
     red_flag_count BIGINT,
     amber_flag_count BIGINT,
     intervention_status TEXT
-) AS $$
-BEGIN
-    RETURN QUERY
+)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+AS $$
+    WITH homework_agg AS (
+        SELECT
+            e.student_id,
+            COUNT(asg.id) AS total_hw_assigned,
+            COUNT(sub.id) FILTER (WHERE sub.status = 'submitted') AS hw_submitted
+        FROM public.enrollments e
+        LEFT JOIN public.assignments asg
+            ON asg.class_id = e.class_id
+           AND asg.due_date BETWEEN p_start_date AND p_end_date
+        LEFT JOIN public.submissions sub
+            ON sub.assignment_id = asg.id
+           AND sub.student_id = e.student_id
+        WHERE e.class_id = p_class_id
+        GROUP BY e.student_id
+    ),
+    tests_agg AS (
+        SELECT
+            e.student_id,
+            ROUND(
+                AVG(sc.marks_obtained / NULLIF(a.max_marks, 0) * 100)::numeric, 1
+            ) AS avg_test_pct
+        FROM public.enrollments e
+        LEFT JOIN public.assessments a
+            ON a.class_id = e.class_id
+           AND a.assessment_date BETWEEN p_start_date AND p_end_date
+        LEFT JOIN public.assessment_scores sc
+            ON sc.assessment_id = a.id
+           AND sc.student_id = e.student_id
+           AND COALESCE(sc.is_absent, false) = false
+        WHERE e.class_id = p_class_id
+        GROUP BY e.student_id
+    ),
+    flags_agg AS (
+        SELECT
+            obs.student_id,
+            COUNT(*) FILTER (WHERE obs.severity = 'red') AS red_flag_count,
+            COUNT(*) FILTER (WHERE obs.severity = 'amber') AS amber_flag_count
+        FROM public.observations obs
+        WHERE obs.class_id = p_class_id
+          AND obs.created_at >= p_start_date
+          AND obs.created_at < p_end_date + INTERVAL '1 day'
+        GROUP BY obs.student_id
+    )
     SELECT
         s.roll_number,
         s.admission_number,
         (s.first_name || ' ' || s.last_name)::TEXT AS student_name,
         s.primary_contact,
-        COUNT(DISTINCT asg.id) AS total_hw_assigned,
-        COUNT(DISTINCT CASE WHEN sub.status = 'submitted' THEN sub.id END) AS hw_submitted,
+        COALESCE(hw.total_hw_assigned, 0) AS total_hw_assigned,
+        COALESCE(hw.hw_submitted, 0) AS hw_submitted,
         ROUND(
-            COUNT(DISTINCT CASE WHEN sub.status = 'submitted' THEN sub.id END)::NUMERIC /
-            NULLIF(COUNT(DISTINCT asg.id), 0) * 100, 1
+            COALESCE(hw.hw_submitted, 0)::NUMERIC / NULLIF(COALESCE(hw.total_hw_assigned, 0), 0) * 100, 1
         ) AS hw_completion_pct,
-        ROUND(
-            COALESCE(AVG(sc.marks_obtained / NULLIF(a.max_marks, 0) * 100), 0)::NUMERIC, 1
-        ) AS avg_test_pct,
-        COUNT(DISTINCT CASE WHEN obs.severity = 'red' THEN obs.id END) AS red_flag_count,
-        COUNT(DISTINCT CASE WHEN obs.severity = 'amber' THEN obs.id END) AS amber_flag_count,
+        COALESCE(t.avg_test_pct, 0.0) AS avg_test_pct,
+        COALESCE(fl.red_flag_count, 0) AS red_flag_count,
+        COALESCE(fl.amber_flag_count, 0) AS amber_flag_count,
         CASE
-            WHEN COUNT(DISTINCT CASE WHEN obs.severity = 'red' THEN obs.id END) > 0 OR
-                 (COUNT(DISTINCT asg.id) - COUNT(DISTINCT CASE WHEN sub.status = 'submitted' THEN sub.id END)) >= 2
-            THEN 'High Attention'
-            WHEN COUNT(DISTINCT CASE WHEN obs.severity = 'amber' THEN obs.id END) > 0 OR
-                 (COUNT(DISTINCT asg.id) - COUNT(DISTINCT CASE WHEN sub.status = 'submitted' THEN sub.id END)) = 1
-            THEN 'Monitor'
+            WHEN COALESCE(fl.red_flag_count, 0) > 0 OR (COALESCE(hw.total_hw_assigned, 0) - COALESCE(hw.hw_submitted, 0)) >= 2 THEN 'High Attention'
+            WHEN COALESCE(fl.amber_flag_count, 0) > 0 OR (COALESCE(hw.total_hw_assigned, 0) - COALESCE(hw.hw_submitted, 0)) = 1 THEN 'Monitor'
             ELSE 'On Track'
         END AS intervention_status
     FROM public.enrollments e
     JOIN public.students s ON s.id = e.student_id
-    LEFT JOIN public.assignments asg ON asg.class_id = e.class_id AND asg.due_date BETWEEN p_start_date AND p_end_date
-    LEFT JOIN public.submissions sub ON sub.assignment_id = asg.id AND sub.student_id = s.id
-    LEFT JOIN public.assessments a ON a.class_id = e.class_id AND a.assessment_date BETWEEN p_start_date AND p_end_date
-    LEFT JOIN public.assessment_scores sc ON sc.assessment_id = a.id AND sc.student_id = s.id
-    LEFT JOIN public.observations obs ON obs.student_id = s.id AND obs.class_id = e.class_id AND obs.created_at::DATE BETWEEN p_start_date AND p_end_date
+    LEFT JOIN homework_agg hw ON hw.student_id = s.id
+    LEFT JOIN tests_agg t ON t.student_id = s.id
+    LEFT JOIN flags_agg fl ON fl.student_id = s.id
     WHERE e.class_id = p_class_id
-    GROUP BY s.id, s.roll_number, s.admission_number, s.first_name, s.last_name, s.primary_contact
     ORDER BY s.roll_number ASC;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+
+-- ============================================================================
+-- 6. EXPLICIT PRIVILEGE HARDENING
+-- Restrict RPC functions to authenticated sessions only
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.fn_student_ptm_report(UUID, UUID, DATE, DATE) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.fn_class_consolidated_report(UUID, DATE, DATE) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.fn_student_ptm_report(UUID, UUID, DATE, DATE) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_class_consolidated_report(UUID, DATE, DATE) TO authenticated;

@@ -19,7 +19,41 @@ DECLARE
     v_asg3_id UUID := gen_random_uuid();
     v_quiz_id UUID := gen_random_uuid();
 BEGIN
-    -- 1. Insert Staff (If using Supabase Auth, you can replace with your auth.users IDs)
+    -- 0. Create Auth Users (ensures public.staff FK constraints succeed without manual signups)
+    INSERT INTO auth.users (
+        id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    )
+    VALUES
+        (
+            v_teacher_id,
+            '00000000-0000-0000-0000-000000000000',
+            'authenticated',
+            'authenticated',
+            'sunita.sharma@dps-model.edu.in',
+            crypt('Password@123', gen_salt('bf')),
+            now(),
+            '{"provider":"email","providers":["email"]}',
+            '{"full_name":"Mrs. Sunita Sharma"}',
+            now(),
+            now()
+        ),
+        (
+            v_coordinator_id,
+            '00000000-0000-0000-0000-000000000000',
+            'authenticated',
+            'authenticated',
+            'rajesh.gupta@dps-model.edu.in',
+            crypt('Password@123', gen_salt('bf')),
+            now(),
+            '{"provider":"email","providers":["email"]}',
+            '{"full_name":"Mr. Rajesh Gupta"}',
+            now(),
+            now()
+        )
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 1. Insert Staff profiles
     INSERT INTO public.staff (id, email, full_name, role, school_name)
     VALUES
         (v_teacher_id, 'sunita.sharma@dps-model.edu.in', 'Mrs. Sunita Sharma', 'teacher', 'Delhi Public Model School (Primary Wing)'),
